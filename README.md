@@ -1,4 +1,4 @@
-# Lexer de declaracoes
+# Parser LARP
 
 Analisador lexico, escrito em Flex, para uma linguagem em estilo C com declaracoes,
 atribuicoes, `if`/`else`, ternario (`if (...) -> ... else -> ...`) e `route`/`fall`.
@@ -26,7 +26,7 @@ com a linha, alem dos erros lexicos encontrados no caminho.
 
 ## Executar no Colab
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Rafaeruo/lexer-declaracoes/blob/master/colab.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Rafaeruo/parser-larp/blob/master/colab.ipynb)
 
 ## Executar localmente
 
