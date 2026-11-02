@@ -122,8 +122,17 @@ lista_cases
     ;
 
 case
-    : literal DOIS_PONTOS bloco
-    | ID DOIS_PONTOS bloco
+    : lista_valores_case DOIS_PONTOS bloco
+    ;
+
+lista_valores_case
+    : valor_case
+    | lista_valores_case VIRGULA valor_case
+    ;
+
+valor_case
+    : literal
+    | ID
     ;
 
 fall

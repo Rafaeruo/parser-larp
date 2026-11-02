@@ -68,7 +68,7 @@ pretende exercitar:
 | `05-inicializacao`               | declaracoes com valor inicial, incluindo em lista                         |
 | `06-if-else`                     | `if`/`else` aninhados, os seis operadores relacionais e aritmetica        |
 | `07-ternario`                    | ternario em declaracao e atribuicao, aninhado e com instrucoes nos ramos  |
-| `08-route-fall`                  | `route` com cases de inteiro, string e ID, `fall` e `else`                |
+| `08-route-fall`                  | `route` com cases de int, string, ID e varios valores, `fall` e `else`    |
 | `09-literais`                    | inteiros, floats e strings com todos os escapes e simbolos imprimiveis    |
 
 ### Erros lexicos

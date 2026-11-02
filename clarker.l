@@ -16,7 +16,8 @@ seta = "->" ;
 
 route = "route" expressao "to" cases ;
 cases = "{" { case } "}" [ else ] ;
-case = (literal | ID) ":" bloco ;
+case = valor_case { "," valor_case } ":" bloco ;
+valor_case = literal | ID ;
 fall = "fall" ";" ;
 
 atribuicao = ID "=" valor ";" ;
@@ -47,7 +48,7 @@ keywords = TIPO | "if" | "else" | "route" | "to" | "fall" ;
 // expressoes, que sao apenas aritmeticas nesse momento, ainda assim permitem strings como termo/fator -> isso precisa ser checado na semantica (poderia ser explicito aqui, mas igual tem que checar na semantica)
 // fall pode estar em qualquer lugar sintaticamente, mas temos que checar semanticamente que vai estar so dentro de cases do route. fazer assim ajuda pra poder botar o fall nested em outras coisas dentro do case (mas sepa a gente n precisa disso?)
 // pros cases, melhor nao deixar floats? e deixar so valores sem IDS? 
-// pros cases, no enunciado ta ambiguo se é obrigatorio mais de um valor por case. VER
+// pros cases, no enunciado ta ambiguo se é obrigatorio mais de um valor por case. por isso aceitamos os dois: um valor ou lista separada por virgula
 // cosnegui fazer os ternarios serem aninhados. isso ta explicito no ramo final do ternario e implicito nos outros pela atribuicao e declaracao que aceitam outros ternarios 
 // ternarios so podem em atribuicoes e declaracoes, nao dentro de expressoes. Acho q de boa pra simplificar 
 // declaracao com atribuicao direto com variso valores sepa nao precisa, enunciado n pede. daria pra remover pra simplificar
