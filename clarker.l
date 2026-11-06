@@ -75,6 +75,10 @@ escape_string     \\["\\nt]
 
 #include "parser.tab.h" // codigos dos tokens (IF, ID, MENOR_IGUAL, etc.), gerado pelo Bison a partir do parser.y
 
+#ifndef SOMENTE_LEXER
+#define YY_USER_ACTION yylloc.first_line = yylloc.last_line = yylineno;
+#endif
+
 // Tipo de simbolo para usar na tabela de simbolos
 typedef struct {
     std::string nome;
@@ -175,6 +179,9 @@ static void erro_lexico(const char *nome, const char *descricao)
     /* Primeiro palavras reservadas de tipos (para nao serem consideradas como identificadores) */
 "string"|"int"|"float" {
     ultimo_tipo_visto = yytext;
+    #ifndef SOMENTE_LEXER
+    yylval.tipo = (yytext[0] == 's') ? T_STRING : (yytext[0] == 'i') ? T_INT : T_FLOAT;
+    #endif
     return token_com_lexema(TIPO, "TIPO");
 }
 
@@ -205,6 +212,9 @@ static void erro_lexico(const char *nome, const char *descricao)
     /* O primeiro caractere e separado dos demais para recusar nao considerar textos iniciados com numeros */
 [a-zA-Z_][a-zA-Z0-9_]* {
     registrar_simbolo(yytext, ultimo_tipo_visto, yylineno);
+    #ifndef SOMENTE_LEXER
+    yylval.nome = new std::string(yytext);
+    #endif
     return token_com_lexema(ID, "ID");
 }
 
