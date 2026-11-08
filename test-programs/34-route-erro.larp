@@ -1,0 +1,21 @@
+float f = 1.5;
+int n = 2;
+string s = "a";
+
+route f to {
+    1: {
+        n = 1;
+    }
+}
+
+route n to {
+    1: {
+        n = 10;
+    }
+    "dois": {
+        n = 20;
+    }
+    s: {
+        n = 30;
+    }
+}

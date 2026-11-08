@@ -1,0 +1,5 @@
+int a, b = 1;
+int c = 1, 2;
+int x, y, z = 1, 2;
+int d, e = 1, 2;
+string s, t = "ola";

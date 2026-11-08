@@ -1,0 +1,12 @@
+int n = 3;
+float f = 2.5;
+string s = "abc";
+string t = "abd";
+
+if (n < s) {
+    n = 1;
+}
+
+if (s < t) {
+    n = 2;
+}
