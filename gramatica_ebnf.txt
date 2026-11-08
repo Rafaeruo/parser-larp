@@ -1,0 +1,54 @@
+Gramática em EBNF:
+programa   = { instrucao } ; 
+instrucao = declaracao | atribuicao |  if  | route | fall ;
+
+declaracao = TIPO lista_ids [ "=" lista_expressoes ] ";" ; 
+lista_ids  = ID { "," ID } ; 
+lista_expressoes = valor { "," valor } ;
+valor = expressao | ternario ;
+
+if = "if" "("  expressao_de_condicao ")" bloco [ else ] ;
+else = "else" bloco ;
+bloco = "{" { instrucao } "}" ;
+ternario = "if" "(" expressao_de_condicao ")" seta instrucoes_ternario "else" seta instrucoes_ternario ;
+instrucoes_ternario = { declaracao | atribuicao } (expressao | ternario) ;
+seta = "->" ;
+
+route = "route" expressao "to" cases ;
+cases = "{" { case } "}" [ else ] ;
+case = valor_case { "," valor_case } ":" bloco ;
+valor_case = literal | ID ;
+fall = "fall" ";" ;
+
+atribuicao = ID "=" valor ";" ;
+
+expressao_de_condicao = expressao operador_relacional expressao ;
+operador_relacional = "<" | "<=" | ">" | ">=" | "==" | "!=" ;
+
+expressao = termo { ( "+" | "-" ) termo } ;
+termo = fator { ( "*" | "/" ) fator } ; 
+fator = literal | ID | "(" expressao ")" ;
+
+literal = LITERAL_INT | LITERAL_FLOAT | LITERAL_STRING ;
+LITERAL_INT = digito { digito } ;
+LITERAL_STRING = '"'{ escape_string | caractere_string }'"' ;
+caractere_string = ? qualquer caractere ASCII (dentre os imprimíveis) ? - ( '"' | "\" ) ;
+escape_string = "\" ( '"' | "\" | "n" | "t" ) ;
+LITERAL_FLOAT = digito { digito } "." digito { digito } ;
+
+TIPO = "string" | "int" | "float" ; 
+ID = identificador - keywords ;
+identificador = letra { letra | digito } ; 
+letra  = "a" | "b" | ... | "z" | "A" | "B" | ... | "Z" | "_" ; 
+digito = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+keywords = TIPO | "if" | "else" | "route" | "to" | "fall" ;
+
+Observações durante a criação da gramática:
+Não possui operadores logicos (and, or) e, portanto, expressões de condição em ifs são "únicas"
+Não possui concatenação de strings. Expressões, que sao apenas aritméticas nesse momento, ainda assim permitem strings como termo/fator. É checado na semântica.
+fall pode estar em qualquer lugar sintaticamente. É checado na semântica que vai estar só dentro de "cases" do route. Fazer assim ajuda para permitir o fall "nested" em outros blocos dentro do case.
+Valores de cases podem ser de qualquer tipo sintaticamente, mas semanticamente são validados para não poder serem float. Isso segue o que outras linguagens fazem, como C, já que comparação de floats é error prone. 
+Valores de cases podem ser múltiplos (separados por vírgula). O enunciado estava ambíguo, então decidimos adicionar.
+Ternários podem ser aninhados! Isso está explicito no ramo final do ternario e implicito nos outros pela atribuicao e declaracao que aceitam outros ternarios. 
+Ternarios so podem aparecer em atribuicoes e declaracoes, nao dentro de expressoes. Foi uma simplificação. 
+Seguindo a possibilidade de declarar várias variáveis em um único statement, decidimos permitir também a inicialização de todas elas nesse mesmo statement. O enunciado não pedia, mas achamos que era coerente com a declaração múltipla.
