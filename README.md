@@ -1,6 +1,6 @@
 # Parser LARP
 
-Analisador lexico e sintatico para LARP, uma linguagem em estilo C com declaracoes,
+Analisador lexico, sintatico e semantico para LARP, uma linguagem em estilo C com declaracoes,
 atribuicoes, `if`/`else`, ternario (`if (...) -> ... else -> ...`) e `route`/`fall`.
 
 O projeto tem duas partes:
@@ -18,7 +18,9 @@ Recebe os tokens do lexer e verifica a estrutura do programa segundo a gramatica
 `gramatica_ebnf.txt`. Ao primeiro erro sintatico, imprime a linha e para. Se a estrutura
 estiver correta, reporta os erros semanticos encontrados (variavel nao declarada ou
 redeclarada no mesmo escopo, tipos incompativeis em atribuicoes, comparacoes, ternarios e
-cases de `route`, `fall` fora de um case, etc.) e imprime a tabela de simbolos.
+cases de `route`, `fall` fora de um case, etc.) e imprime a tabela de simbolos. Se o
+programa for valido, imprime tambem a traducao dirigida por sintaxe: cada comando com
+expressao em notacao pos-fixada (ex.: `x = a + b * c;` vira `x a b c * + =`).
 
 ## Lexer
 
@@ -72,6 +74,7 @@ pretende exercitar:
 | `0x`  | validos           | todos os tokens, 0 erros             | `Programa sintatica e semanticamente correto`           |
 | `1x`  | erros lexicos     | todos os erros lexicos, com a linha  | erros lexicos ate o primeiro erro sintatico (cascatas)  |
 | `2x`  | erros sintaticos  | 0 erros (o programa e lexicamente valido) | um erro sintatico, com a linha                     |
+| `3x`  | erros semanticos  | 0 erros (o programa e lexicamente valido) | todos os erros semanticos, com a linha             |
 
 ### Validos
 
@@ -107,6 +110,15 @@ pretende exercitar:
 | `26-inicializacao-sem-valor`     | `int c = ;`: `=` sem valor                                                |
 | `27-route-sem-to`                | `route x { ... }`: falta o `to`                                           |
 | `28-fim-inesperado`              | `int` no fim do arquivo: declaracao interrompida                          |
+
+### Erros semanticos
+
+| Arquivo                                | O que testa                                                         |
+|----------------------------------------|---------------------------------------------------------------------|
+| `31-reatribuicao-e-fall-fora-de-case`  | variavel redeclarada, variavel nao declarada e `fall` fora de case  |
+| `32-comparacao-invalida`               | comparacao de `int` com `string` e `string` com `<`                 |
+| `33-quantidade-de-valores-errado`      | declaracao com mais variaveis que valores e vice-versa              |
+| `34-route-erro`                        | `route` sobre `float` e case `string` em `route` sobre `int`        |
 
 ## Estrutura
 
