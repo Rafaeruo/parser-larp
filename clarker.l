@@ -103,6 +103,15 @@ static int token_com_lexema(int codigo, const char *nome)
     return codigo;
 }
 
+// Passa o lexema para o parser (atributo "nome" do token). Usado nos identificadores (tabela de simbolos
+// e traducao) e nos literais (traducao para a notacao pos-fixada). No bin/lexer nao ha parser, entao nao faz nada
+static void passar_lexema(void)
+{
+#ifndef SOMENTE_LEXER
+    yylval.nome = new std::string(yytext);
+#endif
+}
+
 // Reporta um erro lexico com o lexema e a linha. Sempre impresso, nos dois executaveis:
 //   bin/lexer:  no meio da sequencia de tokens, ex.: NAO RECONHECIDO(@) na linha 1
 //   bin/parser: um erro por linha, no mesmo formato dos erros sintaticos,
@@ -156,9 +165,7 @@ static void erro_lexico(const char *nome, const char *descricao)
     /* O primeiro caractere e separado dos demais para recusar nao considerar textos iniciados com numeros */
 [a-zA-Z_][a-zA-Z0-9_]* {
     registrar_simbolo(yytext, ultimo_tipo_visto, yylineno);
-    #ifndef SOMENTE_LEXER
-    yylval.nome = new std::string(yytext);
-    #endif
+    passar_lexema();
     return token_com_lexema(ID, "ID");
 }
 
@@ -166,10 +173,12 @@ static void erro_lexico(const char *nome, const char *descricao)
      * Em "3.5" as duas regras casam, mas o float vence por ser o casamento mais longo. Um numero
      * colado em letras (ex.: "2contador") vira LITERAL_INT seguido de ID; o erro fica para o parser */
 [0-9]+\.[0-9]+ {
+    passar_lexema();
     return token_com_lexema(LITERAL_FLOAT, "LITERAL_FLOAT");
 }
 
 [0-9]+ {
+    passar_lexema();
     return token_com_lexema(LITERAL_INT, "LITERAL_INT");
 }
 
@@ -183,6 +192,7 @@ static void erro_lexico(const char *nome, const char *descricao)
      * Nos erros a string inteira e reportada de uma vez, para nao gerar um erro por caractere.
      * O \r fica de fora para que o CR de arquivos CRLF nao entre no texto do erro */
 \"({caractere_string}|{escape_string})*\" {
+    passar_lexema();
     return token_com_lexema(LITERAL_STRING, "LITERAL_STRING");
 }
 
@@ -191,11 +201,13 @@ static void erro_lexico(const char *nome, const char *descricao)
      * falso, ex.: string a = "a\x"; chegaria como string a = ; */
 \"([^"\\\n\r]|\\[^\n\r])*\" {
     erro_lexico("STRING INVALIDA", "string invalida");
+    passar_lexema();
     return LITERAL_STRING;
 }
 
 \"([^"\\\n\r]|\\[^\n\r])*\\? {
     erro_lexico("STRING NAO TERMINADA", "string nao terminada");
+    passar_lexema();
     return LITERAL_STRING;
 }
 

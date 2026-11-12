@@ -1,18 +1,24 @@
 /* Parser da linguagem LARP: analise sintatica + analise semantica feita por
  * TRADUCAO DIRIGIDA POR SINTAXE (TDS).
  *
- * A gramatica (BNF) e a mesma da versao anterior. O que mudou: as producoes agora tem ACOES
- * SEMANTICAS e os simbolos da gramatica carregam ATRIBUTOS (%union / %type).
+ * As regras da gramática sao as mesmas das em gramatica_ebnf.txt. Adaptado pra o bison o seguinte muda:
+ *   { x }  vira uma lista recursiva a esquerda que pode ser vazia: lista: %empty | lista x ;
+ *   [ x ]  vira duas alternativas, uma com x e outra sem
+ *
+ * Para verificação semântica, as producoes tem ACOES SEMANTICAS e os simbolos da gramatica carregam ATRIBUTOS (%union / %type).
  *
  * Atributos usados:
  *   - TIPO (token)                 -> <tipo>   o tipo escrito na declaracao (int/float/string)
- *   - ID (token)                   -> <nome>   o lexema do identificador
+ *   - ID e literais (tokens)       -> <nome>   o lexema
  *   - literal, fator, termo,
- *     expressao, valor, ternario   -> <tipo>   tipo da expressao (SINTETIZADO: sobe das folhas
- *                                              para a raiz, ex.: expressao.tipo = f(expressao1.tipo, termo.tipo))
- *   - lista_ids                    -> <ids>    nomes (e linhas) declarados, na ordem
- *   - lista_expressoes             -> <tipos>  tipo de cada valor de uma declaracao
- *   - operador_relacional          -> <inteiro> 1 se for == ou !=, 0 se for de ordem (<, <=, >, >=)
+ *     expressao, valor, ternario   -> <expr>   dois atributos SINTETIZADOS (sobem das folhas para a raiz):
+ *                                              .tipo    tipo da expressao, ex.: expressao.tipo = f(expressao1.tipo, termo.tipo)
+ *                                              .posfixa traducao para notacao pos-fixada, ex.:
+ *                                                       expressao.posfixa = expressao1.posfixa + termo.posfixa + "+"
+ *   - lista_ids                    -> <ids>     nomes (e linhas) declarados, na ordem
+ *   - lista_expressoes             -> <valores> cada valor de uma declaracao (tipo e pos-fixada)
+ *   - expressao_de_condicao        -> <nome>    pos-fixada da condicao
+ *   - operador_relacional          -> <nome>    o operador ("<", "==", ...)
  *
  * Atributos "herdados" (informacao que desce da gramatica, que o Bison/LR nao tem nativamente)
  * sao simulados com estado global manipulado por acoes no meio da regra:
@@ -35,6 +41,10 @@
  * Erros semanticos nao interrompem o parse: sao contados e reportados no formato
  *   [LARP] ERRO SEMANTICO na linha N: mensagem
  * O tipo especial T_ERRO e propagado silenciosamente para nao gerar erros em cascata.
+ *
+ * Tradução demonstrável: cada comando que contem expressoes (atribuicao, declaracao com valor, condicao do if,
+ * expressao do route) gera uma linha com a sua forma pos-fixada. As linhas sao guardadas na ordem em
+ * que os comandos sao reconhecidos e impressas no fim se o programa nao tiver erros.
  */
 
     /* Tipos usados dentro do %union: precisam existir antes dele (e tambem no parser.tab.h, que o
@@ -48,6 +58,12 @@ enum Tipo { T_ERRO, T_INT, T_FLOAT, T_STRING };
 struct Identificador {
     std::string nome;
     int         linha;
+};
+
+// Atributos de uma expressao: o tipo (verificacao semantica) e a traducao para pos-fixada
+struct Expressao {
+    Tipo         tipo;
+    std::string *posfixa;
 };
 }
 
@@ -94,6 +110,50 @@ static std::vector< std::map<std::string, int> > escopos(1);
 static std::vector<Tipo> pilha_de_routes;     // tipo da expressao de cada route "aberto"
 static int profundidade_de_cases = 0;         // quantos cases estamos dentro (fall so vale se > 0)
 static int total_de_erros_semanticos = 0;
+
+// Traducao: uma linha por comando, na ordem em que foram reconhecidos
+struct LinhaTraduzida {
+    int         linha;
+    std::string comando;
+    std::string posfixa;
+};
+
+static std::vector<LinhaTraduzida> traducao;
+
+static void emitir(int linha, const char *comando, const std::string &posfixa)
+{
+    LinhaTraduzida l;
+    l.linha   = linha;
+    l.comando = comando;
+    l.posfixa = posfixa;
+    traducao.push_back(l);
+}
+
+// Pos-fixada de "a <op> b": os dois operandos e depois o operador. Libera os operandos
+static std::string *juntar(std::string *a, std::string *b, const char *operador)
+{
+    std::string *resultado = new std::string(*a + " " + *b + " " + operador);
+    delete a;
+    delete b;
+    return resultado;
+}
+
+static void imprimir_traducao(void)
+{
+    size_t i;
+
+    printf("\nTRADUCAO (notacao pos-fixada)\n");
+
+    if (traducao.empty()) {
+        printf("  (nenhum comando com expressao)\n");
+        return;
+    }
+
+    for (i = 0; i < traducao.size(); i++) {
+        printf("  linha %3d  %-10s  %s\n",
+               traducao[i].linha, traducao[i].comando.c_str(), traducao[i].posfixa.c_str());
+    }
+}
 
 // Utilitarios
 
@@ -317,9 +377,10 @@ static void declarar_todas(Tipo tipo, const std::vector<Identificador> &ids)
 }
 
 // "tipo a, b = x, y;": os valores sao avaliados (e tem seus IDs checados) ANTES desta funcao,
-// entao "int a = a;" acusa "a" como nao declarada. Os pares (variavel, valor) sao casados por posicao
+// entao "int a = a;" acusa "a" como nao declarada. Os pares (variavel, valor) sao casados por posicao,
+// e cada par vira uma linha da traducao, como uma atribuicao: "int a, b = 1, 2;" -> "a 1 =" e "b 2 ="
 static void declarar_com_valores(Tipo tipo, const std::vector<Identificador> &ids,
-                                 const std::vector<Tipo> &valores, int linha)
+                                 const std::vector<Expressao> &valores, int linha)
 {
     size_t i;
 
@@ -329,29 +390,43 @@ static void declarar_com_valores(Tipo tipo, const std::vector<Identificador> &id
     }
 
     for (i = 0; i < ids.size() && i < valores.size(); i++) {
-        checar_atribuicao(tipo, valores[i], ids[i].nome, linha);
+        checar_atribuicao(tipo, valores[i].tipo, ids[i].nome, linha);
+        emitir(ids[i].linha, "declaracao", ids[i].nome + " " + *valores[i].posfixa + " =");
     }
 
     declarar_todas(tipo, ids);
 }
+
+static void liberar_valores(std::vector<Expressao> *valores)
+{
+    size_t i;
+
+    for (i = 0; i < valores->size(); i++) {
+        delete (*valores)[i].posfixa;
+    }
+
+    delete valores;
+}
 }
 
 %union {
-    std::string                *nome;    // lexema de um ID (alocado pelo lexer, liberado pelo parser)
+    std::string                *nome;    // lexema de um ID ou literal (alocado pelo lexer, liberado pelo parser)
     Tipo                        tipo;
-    int                         inteiro;
+    Expressao                   expr;
     std::vector<Identificador> *ids;
-    std::vector<Tipo>          *tipos;
+    std::vector<Expressao>     *valores;
 }
 
     /* Libera valores alocados que o parser descarta ao abortar por erro de sintaxe */
-%destructor { delete $$; } <nome> <ids> <tipos>
+%destructor { delete $$; } <nome> <ids>
+%destructor { delete $$.posfixa; } <expr>
+%destructor { liberar_valores($$); } <valores>
 
     /* Tokens (terminais), com os mesmos nomes impressos pelo lexer. O texto entre aspas é so um
      * apelido para as mensagens de erro. */
 %token <tipo> TIPO
 %token <nome> ID
-%token LITERAL_INT LITERAL_FLOAT LITERAL_STRING
+%token <nome> LITERAL_INT LITERAL_FLOAT LITERAL_STRING
 %token IF "if" ELSE "else" ROUTE "route" TO "to" FALL "fall"
 %token VIRGULA "," PONTO_VIRGULA ";" DOIS_PONTOS ":" ATRIBUICAO "=" SETA "->"
 %token ABRE_PARENTESES "(" FECHA_PARENTESES ")" ABRE_CHAVES "{" FECHA_CHAVES "}"
@@ -359,10 +434,10 @@ static void declarar_com_valores(Tipo tipo, const std::vector<Identificador> &id
 %token MENOR "<" MENOR_IGUAL "<=" MAIOR ">" MAIOR_IGUAL ">=" IGUAL "==" DIFERENTE "!="
 
     /* Tipos dos atributos dos nao-terminais */
-%type <tipo>    literal fator termo expressao valor ternario ramo_ternario instrucoes_ternario
+%type <expr>    literal fator termo expressao valor ternario ramo_ternario instrucoes_ternario
 %type <ids>     lista_ids
-%type <tipos>   lista_expressoes
-%type <inteiro> operador_relacional
+%type <valores> lista_expressoes
+%type <nome>    expressao_de_condicao operador_relacional
 
 %%
 
@@ -396,7 +471,7 @@ declaracao
         {
             declarar_com_valores($1, *$2, *$4, @3.first_line);
             delete $2;
-            delete $4;
+            liberar_valores($4);
         }
     ;
 
@@ -418,7 +493,7 @@ lista_ids
 lista_expressoes
     : valor
         {
-            $$ = new std::vector<Tipo>();
+            $$ = new std::vector<Expressao>();
             $$->push_back($1);
         }
     | lista_expressoes VIRGULA valor
@@ -436,8 +511,17 @@ valor
     /* if/else e ternario. Os dois comecam com IF "(" condicao ")", mas nunca aparecem no mesmo
      * lugar: o if e uma instrucao e o ternario so aparece como valor (depois de um "=") */
 
+    /* A condicao e traduzida antes do bloco (acao no meio da regra), para que a traducao saia na
+     * mesma ordem do programa. Depois de liberada, o valor e zerado: se um erro de sintaxe abortar o
+     * parse dentro do bloco, o %destructor recebe NULL e nao libera a mesma string duas vezes */
 if
-    : IF ABRE_PARENTESES expressao_de_condicao FECHA_PARENTESES bloco else_opcional
+    : IF ABRE_PARENTESES expressao_de_condicao FECHA_PARENTESES
+        {
+            emitir(@1.first_line, "if", *$3);
+            delete $3;
+            $3 = NULL;
+        }
+      bloco else_opcional
     ;
 
 else_opcional
@@ -452,10 +536,17 @@ bloco
     ;
 
     /* O tipo do ternario vem dos tipos dos dois ramos. Cada ramo tem escopo proprio: o que e
-     * declarado dentro dele nao existe fora (nem no outro ramo) */
+     * declarado dentro dele nao existe fora (nem no outro ramo). Na pos-fixada, o ternario e um
+     * operador de tres operandos: condicao, valor do primeiro ramo e valor do segundo, e depois "?:" */
 ternario
     : IF ABRE_PARENTESES expressao_de_condicao FECHA_PARENTESES ramo_ternario ELSE ramo_ternario
-        { $$ = unir_ramos($5, $7, @1.first_line); }
+        {
+            $$.tipo    = unir_ramos($5.tipo, $7.tipo, @1.first_line);
+            $$.posfixa = new std::string(*$3 + " " + *$5.posfixa + " " + *$7.posfixa + " ?:");
+            delete $3;
+            delete $5.posfixa;
+            delete $7.posfixa;
+        }
     ;
 
 ramo_ternario
@@ -483,7 +574,7 @@ lista_declaracoes_e_atribuicoes
 route
     : ROUTE expressao TO
         {
-            Tipo tipo_do_route = $2;
+            Tipo tipo_do_route = $2.tipo;
 
             if (tipo_do_route == T_FLOAT) {
                 erro_semantico(@1.first_line, "route nao aceita expressao do tipo float (use int ou string)");
@@ -491,6 +582,10 @@ route
             }
 
             pilha_de_routes.push_back(tipo_do_route);
+
+            emitir(@1.first_line, "route", *$2.posfixa);
+            delete $2.posfixa;
+            $2.posfixa = NULL; // mesmo motivo do if: o %destructor nao pode liberar de novo
         }
       cases
         { pilha_de_routes.pop_back(); }
@@ -519,7 +614,10 @@ lista_valores_case
 
 valor_case
     : literal
-        { checar_valor_de_case($1, @1.first_line); }
+        {
+            checar_valor_de_case($1.tipo, @1.first_line);
+            delete $1.posfixa;
+        }
     | ID
         {
             Tipo tipo_do_id = usar_variavel(*$1, @1.first_line);
@@ -543,58 +641,87 @@ atribuicao
     : ID ATRIBUICAO valor PONTO_VIRGULA
         {
             Tipo destino = usar_variavel(*$1, @1.first_line);
-            checar_atribuicao(destino, $3, *$1, @2.first_line);
+            checar_atribuicao(destino, $3.tipo, *$1, @2.first_line);
+            emitir(@1.first_line, "atribuicao", *$1 + " " + *$3.posfixa + " =");
             delete $1;
+            delete $3.posfixa;
         }
     ;
 
     /* Expressoes. A precedencia vem da propria estrutura da gramatica: "*" e "/" ficam num nivel
      * mais baixo (termo) que "+" e "-" (expressao), entao sao agrupados primeiro. A recursao a
      * esquerda (expressao: expressao MAIS termo) faz os operadores associarem a esquerda. Em cada
-     * regra, o tipo do resultado e calculado a partir do tipo dos filhos (atributo sintetizado) */
+     * regra, o tipo e a pos-fixada do resultado sao calculados a partir dos filhos (atributos
+     * sintetizados). A pos-fixada nao precisa de parenteses: a ordem dos operadores ja reflete a
+     * precedencia e a associatividade, ex.: (a + b) * c -> a b + c *  e  a - b - c -> a b - c - */
 
 expressao_de_condicao
     : expressao operador_relacional expressao
-        { checar_condicao($1, $3, $2, @2.first_line); }
+        {
+            int e_igualdade = (*$2 == "==" || *$2 == "!=");
+
+            checar_condicao($1.tipo, $3.tipo, e_igualdade, @2.first_line);
+            $$ = juntar($1.posfixa, $3.posfixa, $2->c_str());
+            delete $2;
+        }
     ;
 
 operador_relacional
-    : MENOR          { $$ = 0; }
-    | MENOR_IGUAL    { $$ = 0; }
-    | MAIOR          { $$ = 0; }
-    | MAIOR_IGUAL    { $$ = 0; }
-    | IGUAL          { $$ = 1; }
-    | DIFERENTE      { $$ = 1; }
+    : MENOR          { $$ = new std::string("<"); }
+    | MENOR_IGUAL    { $$ = new std::string("<="); }
+    | MAIOR          { $$ = new std::string(">"); }
+    | MAIOR_IGUAL    { $$ = new std::string(">="); }
+    | IGUAL          { $$ = new std::string("=="); }
+    | DIFERENTE      { $$ = new std::string("!="); }
     ;
 
 expressao
-    : termo                   { $$ = $1; }
-    | expressao MAIS termo    { $$ = tipo_aritmetico($1, $3, "+", @2.first_line); }
-    | expressao MENOS termo   { $$ = tipo_aritmetico($1, $3, "-", @2.first_line); }
+    : termo
+        { $$ = $1; }
+    | expressao MAIS termo
+        {
+            $$.tipo    = tipo_aritmetico($1.tipo, $3.tipo, "+", @2.first_line);
+            $$.posfixa = juntar($1.posfixa, $3.posfixa, "+");
+        }
+    | expressao MENOS termo
+        {
+            $$.tipo    = tipo_aritmetico($1.tipo, $3.tipo, "-", @2.first_line);
+            $$.posfixa = juntar($1.posfixa, $3.posfixa, "-");
+        }
     ;
 
 termo
-    : fator                   { $$ = $1; }
-    | termo VEZES fator       { $$ = tipo_aritmetico($1, $3, "*", @2.first_line); }
-    | termo DIVIDIDO fator    { $$ = tipo_aritmetico($1, $3, "/", @2.first_line); }
+    : fator
+        { $$ = $1; }
+    | termo VEZES fator
+        {
+            $$.tipo    = tipo_aritmetico($1.tipo, $3.tipo, "*", @2.first_line);
+            $$.posfixa = juntar($1.posfixa, $3.posfixa, "*");
+        }
+    | termo DIVIDIDO fator
+        {
+            $$.tipo    = tipo_aritmetico($1.tipo, $3.tipo, "/", @2.first_line);
+            $$.posfixa = juntar($1.posfixa, $3.posfixa, "/");
+        }
     ;
 
+    /* As folhas: o lexema do ID ou do literal (vindo do lexer) vira a pos-fixada do fator */
 fator
     : literal
         { $$ = $1; }
     | ID
         {
-            $$ = usar_variavel(*$1, @1.first_line);
-            delete $1;
+            $$.tipo    = usar_variavel(*$1, @1.first_line);
+            $$.posfixa = $1;
         }
     | ABRE_PARENTESES expressao FECHA_PARENTESES
         { $$ = $2; }
     ;
 
 literal
-    : LITERAL_INT     { $$ = T_INT; }
-    | LITERAL_FLOAT   { $$ = T_FLOAT; }
-    | LITERAL_STRING  { $$ = T_STRING; }
+    : LITERAL_INT     { $$.tipo = T_INT;    $$.posfixa = $1; }
+    | LITERAL_FLOAT   { $$.tipo = T_FLOAT;  $$.posfixa = $1; }
+    | LITERAL_STRING  { $$.tipo = T_STRING; $$.posfixa = $1; }
     ;
 
 %%
@@ -620,6 +747,8 @@ int main(void)
                NOME_DA_LINGUAGEM, total_de_erros_lexicos, total_de_erros_semanticos);
         return 1;
     }
+
+    imprimir_traducao();
 
     printf("\n[%s] Programa sintatica e semanticamente correto\n", NOME_DA_LINGUAGEM);
     return 0;
