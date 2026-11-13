@@ -1,6 +1,6 @@
 # Parser LARP
 
-Analisador lexico, sintatico e semantico para LARP, uma linguagem em estilo C com declaracoes,
+Analisador lexico, sintatico e semantico para LARP (*LAnguage for Real Programmers*), uma linguagem em estilo C com declaracoes,
 atribuicoes, `if`/`else`, ternario (`if (...) -> ... else -> ...`) e `route`/`fall`.
 
 O projeto tem duas partes:
